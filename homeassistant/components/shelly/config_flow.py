@@ -242,10 +242,16 @@ class ShellyConfigFlow(ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def _check_enhanced_security(info: dict[str, Any], port: int) -> int:
-        """Return HTTPS port if device reports enhanced_security is enabled."""
-        if info.get("enhanced_security"):
-            return DEFAULT_HTTPS_PORT
-
+        """Return the port to use based on device info and provided port.
+        
+        If device info includes a port field, use that as the device is reporting
+        its actual port. Otherwise, use the provided port.
+        
+        Note: enhanced_security can be enabled without HTTPS certificates uploaded,
+        in which case the device still uses HTTP.
+        """
+        if "port" in info:
+            return info["port"]
         return port
 
     @staticmethod

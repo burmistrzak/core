@@ -569,7 +569,7 @@ async def test_form_enhanced_security(
     mock_setup_entry: AsyncMock,
     mock_setup: AsyncMock,
 ) -> None:
-    """Test manual setup on port 80 with enhanced_security upgrades to 443."""
+    """Test manual setup on port 80 with enhanced_security keeps port 80."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
@@ -593,7 +593,7 @@ async def test_form_enhanced_security(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == {
         CONF_HOST: "1.1.1.1",
-        CONF_PORT: DEFAULT_HTTPS_PORT,
+        CONF_PORT: DEFAULT_HTTP_PORT,
         CONF_MODEL: model,
         CONF_SLEEP_PERIOD: 0,
         CONF_GEN: gen,
@@ -636,6 +636,57 @@ async def test_form_enhanced_security_older_firmware(
         CONF_MODEL: MODEL_PLUS_2PM,
         CONF_SLEEP_PERIOD: 0,
         CONF_GEN: 2,
+    }
+    assert len(mock_setup.mock_calls) == 1
+    assert len(mock_setup_entry.mock_calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("gen", "model"),
+    [
+        (2, MODEL_PLUS_2PM),
+        (3, MODEL_PLUS_2PM),
+        (4, MODEL_PLUS_2PM),
+    ],
+)
+async def test_form_enhanced_security_with_https_port(
+    hass: HomeAssistant,
+    gen: int,
+    model: str,
+    mock_rpc_device: Mock,
+    mock_setup_entry: AsyncMock,
+    mock_setup: AsyncMock,
+) -> None:
+    """Test manual setup with enhanced_security and device reports HTTPS port."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert result["type"] is FlowResultType.FORM
+
+    with patch(
+        "homeassistant.components.shelly.config_flow.get_info",
+        return_value={
+            "mac": "test-mac",
+            "model": model,
+            "auth": False,
+            "gen": gen,
+            "enhanced_security": True,
+            "port": DEFAULT_HTTPS_PORT,
+        },
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: "1.1.1.1", CONF_PORT: DEFAULT_HTTP_PORT},
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        CONF_HOST: "1.1.1.1",
+        CONF_PORT: DEFAULT_HTTPS_PORT,
+        CONF_MODEL: model,
+        CONF_SLEEP_PERIOD: 0,
+        CONF_GEN: gen,
+        CONF_VERIFY_SSL: False,
     }
     assert len(mock_setup.mock_calls) == 1
     assert len(mock_setup_entry.mock_calls) == 1
@@ -2372,7 +2423,73 @@ async def test_zeroconf_enhanced_security(
     mock_setup_entry: AsyncMock,
     mock_setup: AsyncMock,
 ) -> None:
-    """Test zeroconf discovery with enhanced_security upgrades port to 443."""
+    """Test zeroconf discovery with enhanced_security keeps discovered port."""
+    with patch(
+        "homeassistant.components.shelly.config_flow.get_info", return_value=get_info
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            data=DISCOVERY_INFO,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {}
+        context = next(
+            flow["context"]
+            for flow in hass.config_entries.flow.async_progress()
+            if flow["flow_id"] == result["flow_id"]
+        )
+        assert context["title_placeholders"]["name"] == "shelly1pm-12345"
+        assert context["confirm_only"] is True
+        assert context["configuration_url"] == "http://1.1.1.1"
+        assert result["step_id"] == "confirm_discovery"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {},
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Test name"
+    assert result["data"] == {
+        CONF_HOST: "1.1.1.1",
+        CONF_PORT: DEFAULT_HTTP_PORT,
+        CONF_VERIFY_SSL: False,
+        CONF_MODEL: model,
+        CONF_SLEEP_PERIOD: 0,
+        CONF_GEN: gen,
+    }
+    assert len(mock_setup.mock_calls) == 1
+    assert len(mock_setup_entry.mock_calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("gen", "model", "get_info"),
+    [
+        (
+            2,
+            MODEL_PLUS_2PM,
+            {
+                "mac": "test-mac",
+                "model": MODEL_PLUS_2PM,
+                "auth": False,
+                "gen": 2,
+                "enhanced_security": True,
+                "port": DEFAULT_HTTPS_PORT,
+            },
+        ),
+    ],
+)
+async def test_zeroconf_enhanced_security_with_https_port(
+    hass: HomeAssistant,
+    gen: int,
+    model: str,
+    get_info: dict[str, Any],
+    mock_rpc_device: Mock,
+    mock_setup_entry: AsyncMock,
+    mock_setup: AsyncMock,
+) -> None:
+    """Test zeroconf discovery with enhanced_security and device reports HTTPS port."""
     with patch(
         "homeassistant.components.shelly.config_flow.get_info", return_value=get_info
     ):
@@ -2796,7 +2913,7 @@ async def test_reauth_enhanced_security(
     hass: HomeAssistant,
     mock_rpc_device: Mock,
 ) -> None:
-    """Test reauth flow with enhanced_security upgrades port to 443."""
+    """Test reauth flow with enhanced_security keeps original port."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="test-mac",
@@ -2827,7 +2944,7 @@ async def test_reauth_enhanced_security(
     assert result["reason"] == "reauth_successful"
     assert entry.data == {
         CONF_HOST: "0.0.0.0",
-        CONF_PORT: DEFAULT_HTTPS_PORT,
+        CONF_PORT: DEFAULT_HTTP_PORT,
         CONF_GEN: 2,
         CONF_USERNAME: "admin",
         CONF_PASSWORD: "test password",
@@ -3469,7 +3586,7 @@ async def test_reconfigure_enhanced_security(
     hass: HomeAssistant,
     mock_rpc_device: Mock,
 ) -> None:
-    """Test reconfigure flow with enhanced_security upgrades port to 443."""
+    """Test reconfigure flow with enhanced_security keeps original port."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="test-mac",
@@ -3501,7 +3618,7 @@ async def test_reconfigure_enhanced_security(
     assert result["reason"] == "reconfigure_successful"
     assert entry.data == {
         CONF_HOST: "10.10.10.10",
-        CONF_PORT: DEFAULT_HTTPS_PORT,
+        CONF_PORT: DEFAULT_HTTP_PORT,
         CONF_GEN: 2,
         CONF_VERIFY_SSL: False,
     }
